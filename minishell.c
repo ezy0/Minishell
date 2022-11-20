@@ -9,7 +9,8 @@ int main() {
 
 	while (fgets(buf, BUFFER_SIZE, stdin > 0))
 	{
-		line = tokenize(buf) //Leemos linea del teclado
+		printf ("msh> ");	//Añadir el directorio??
+		line = tokenize(buf); //Leemos linea del teclado
 		if (line == NULL)
 			continue;
 		execline(line, buf);
