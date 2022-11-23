@@ -7,6 +7,18 @@
 
 int BSIZE = 1024;
 
+
+void	prompt() {
+	char	dir[BSIZE];
+
+	getcwd(dir, BSIZE); //Nombramos el directorio
+	printf ("\033[1;32m");
+	printf ("%s ", dir);
+	printf ("\033[1;33m");
+	printf ("msh> ");
+	printf ("\033[0m");
+}
+
 int	ft_strcmp(const char *s1, const char *s2)
 {
 	unsigned int	i;
@@ -56,10 +68,8 @@ void	leerUno(tline *linea) {
 int	main() {
 	char	buf[BSIZE];
 	tline	*linea;
-	char	dir[BSIZE];
 
-	getcwd(dir, BSIZE); //Nombramos el directorio
-	printf ("%s msh> ", dir);
+	prompt();
 	while (fgets(buf, BSIZE, stdin))	//Lee una linea que introduzca el usuario y la tokeniza? para procesarla
 	{
 		linea = tokenize(buf); //Leemos linea del teclado
@@ -77,8 +87,6 @@ int	main() {
 				leerUno(linea);
 		}
 
-		getcwd(dir, BSIZE);	//Actualizamos directorio y volvemos a escribir
-		printf ("%s msh> ", dir);
+		prompt();
 	}
 }
-
