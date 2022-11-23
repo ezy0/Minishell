@@ -3,8 +3,9 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h> 
 
-int BUFFER_SIZE = 1024;
+int BSIZE = 1024;
 
 int	ft_strcmp(const char *s1, const char *s2)
 {
@@ -22,18 +23,45 @@ int	ft_strcmp(const char *s1, const char *s2)
 	return (0);
 }
 
+int	cd(tline *linea) {
+	char *dir;
+	char buffer[512];
+	
+	if(linea -> commands[0].argc > 2)
+	{
+	  fprintf(stderr,"Debes escribir una sola ruta\n");
+	  return 1;
+	}
+	
+	if (linea -> commands[0].argc == 1)
+	{
+		dir = getenv("HOME");
+		if(dir == NULL)
+		  fprintf(stderr,"No existe la variable $HOME\n");
+	} else
+		dir = linea -> commands[0].argv[1];
+	
+	// Comprobar si es un directorio
+	if (chdir(dir) != 0)
+		fprintf(stderr,"Error al cambiar de directorio: %s\n", strerror(errno));  
+
+	return 0;
+}
+
+
 void	leerUno(tline *linea) {
 
 }
 
 int	main() {
-	char buf[BUFFER_SIZE];
-	tline *linea; 
+	char	buf[BSIZE];
+	tline	*linea;
+	char	dir[BSIZE];
 
-	printf ("msh> ");	//Añadir el directorio??
-	while (fgets(buf, BUFFER_SIZE, stdin))	//Lee una linea que introduzca el usuario y la tokeniza? para procesarla
+	getcwd(dir, BSIZE); //Nombramos el directorio
+	printf ("%s msh> ", dir);
+	while (fgets(buf, BSIZE, stdin))	//Lee una linea que introduzca el usuario y la tokeniza? para procesarla
 	{
-		printf ("msh> ");	//Añadir el directorio??
 		linea = tokenize(buf); //Leemos linea del teclado
 		if (linea == NULL)
 			continue;
@@ -43,11 +71,14 @@ int	main() {
 		{
 			if (ft_strcmp(linea -> commands[0].argv[0], "exit") == 0)
 				exit (0);
+			if (ft_strcmp(linea -> commands[0].argv[0], "cd") == 0)
+				cd(linea);
 			else
 				leerUno(linea);
 		}
 
-		
+		getcwd(dir, BSIZE);	//Actualizamos directorio y volvemos a escribir
+		printf ("%s msh> ", dir);
 	}
 }
 
