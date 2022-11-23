@@ -6,13 +6,12 @@ typedef struct {
 } tcommand;
 
 typedef struct {
-	int ncommands;
-	tcommand * commands;
-	char * redirect_input;
-	char * redirect_output;
-	char * redirect_error;
-	int background;
+	int ncommands;	//Numero de comandos
+	tcommand * commands;	//Puntero de comandos
+	char * redirect_input;	//Redir entrada
+	char * redirect_output;	//Redir de salida
+	char * redirect_error;	//Redir error
+	int background;	//Indicador segundo plano
 } tline;
 
 extern tline * tokenize(char *str);
-
