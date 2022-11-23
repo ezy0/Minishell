@@ -25,7 +25,7 @@ int	ft_strcmp(const char *s1, const char *s2)
 
 int	cd(tline *linea) {
 	char *dir;
-	char buffer[512];
+	char buffer[BSIZE];
 	
 	if(linea -> commands[0].argc > 2)
 	{
