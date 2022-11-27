@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <errno.h> 
 
+#include <sys/types.h> //wait
+#include <sys/wait.h>  //wait
+
 int BSIZE = 1024;
 
 
@@ -61,7 +64,35 @@ int	cd(tline *linea) {
 }
 
 
-void	leerUno(tline *linea) {
+void leerUno(tline *linea) {
+	pid_t  pid; //En esta variable se guardará lo que devuelva el fork(). Si == 0, es el hijo. Si es > 0 es el padre. Si es < 0, error
+	int status;
+
+	pid = fork();
+
+	if (pid < 0) { //Error en el fork
+		linea -> redirect_error = "ERROR: El fork ha fallado" ;
+		exit(1);
+	}
+
+	else if(pid == 0){
+		execvp(linea -> commands -> argv[0], linea->commands -> argv); //Ejecuta el comando y los argumentos, empezando por 1 más ya que el primero en el array es el propio comando
+		//Saltará a la siguiente linea si se ha producido un error
+		linea -> redirect_error = "ERROR: El comando/argumentos ejecutados no existen\n" ;
+		printf("ERROR: El mandato %s no existe\n" ,linea -> commands -> argv[0]);
+		exit(1);
+	}
+
+	else{
+		wait (&status);
+		if (WIFEXITED(status) != 0) //El valor devuelto por WIFEXITED será 0 cuando el hijo ha terminado de una manera anormal.
+			if (WEXITSTATUS(status) != 0){ //WEXITSTATUS devuelve el valor que ha pasado el hijo a la función exit()
+				//linea -> redirect_error = "ERROR: El comando no se ejecutó correctamente\n" ;
+				//printf(linea -> redirect_error);
+				printf("ERROR: El comando no se ejecutó correctamente\n");
+			}	
+		//exit(0); No habría que ponerlo ya que se nos sale del prompt
+	}
 
 }
 
@@ -83,8 +114,10 @@ int	main() {
 				exit (0);
 			if (ft_strcmp(linea -> commands[0].argv[0], "cd") == 0)
 				cd(linea);
-			else
+			else{
+				
 				leerUno(linea);
+			}
 		}
 
 		prompt();
