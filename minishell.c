@@ -76,12 +76,22 @@ void leerUno(tline *linea) {
 
 }
 
+int	entrada(tline *linea){
+	int	fd;
+
+	fd = open(linea->redirect_input, O_RDONLY);
+	if (fd == -1)
+		fprintf(stderr, "ERROR: %s\n", strerror(errno));
+	return (fd);
+}
+
 int	main() {
 	char	buf[BSIZE];
 	tline	*linea;
 
+	int 	fd_in = dup(0);
 	int		fd_out = dup(1);	//Creas un file descriptor para la salida y lo duplicas, 1 para salida
-	int		fd_error = dup(1);
+	int		fd_error = dup(2);
 
 	prompt();
 	while (fgets(buf, BSIZE, stdin))	//Lee una linea que introduzca el usuario y la tokeniza? para procesarla
@@ -89,12 +99,16 @@ int	main() {
 		linea = tokenize(buf); //Leemos linea del teclado
 		if (linea == NULL)
 			continue;
+
+		//	Redireccion de entrada
+		if (linea -> redirect_input)
+			dup2(entrada(linea), 0);	//Cuando grep falla no vuelve a mostrar el prompt después
 		// Redireccion de salida
 		if (linea -> redirect_output)
-			dup2(open(linea->redirect_output, O_CREAT | O_WRONLY, 0642), 1); //Crea una copia del fd del fichero que se ha creado pero usa el fd = 1
+			dup2(open(linea->redirect_output, O_CREAT | O_WRONLY, 0642), 1); 
 		//Redireccion de error
 		if (linea -> redirect_error)
-			dup2(open(linea->redirect_error, O_CREAT | O_WRONLY, 0642), 1);
+			dup2(open(linea->redirect_error, O_CREAT | O_WRONLY, 0642), 2);
 
 		//Leer 1 comando de la linea
 		if (linea -> ncommands == 1)
@@ -107,10 +121,12 @@ int	main() {
 				leerUno(linea);
 		}
 
+		if (linea -> redirect_input)
+			dup2(fd_in, 0);
 		if (linea -> redirect_output)
 			dup2(fd_out, 1);	//Se vuelve a reestablecer la salida a su valor por defecto, 1
 		if (linea -> redirect_error)
-			dup2(fd_error, 1);
+			dup2(fd_error, 2);
 
 		prompt();
 	}
