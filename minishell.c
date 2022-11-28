@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <errno.h> 
 #include <fcntl.h>
-
+#include <signal.h>
 #include <sys/types.h> //wait
 #include <sys/wait.h>  //wait
 
@@ -52,7 +52,7 @@ void leerUno(tline *linea) {
 	int status;
 
 	pid = fork();
-
+	
 	if (pid < 0) { //Error en el fork
 		linea -> redirect_error = "ERROR: El fork ha fallado" ;
 		printf("ERROR: El fork ha fallado");
@@ -76,6 +76,38 @@ void leerUno(tline *linea) {
 
 }
 
+void	dosComandos(tline *linea){
+	pid_t	pid;
+	int		p_hijos[2];
+	int		status;
+
+	pipe(p_hijos);
+	pid = fork();
+	if (pid < 0) {
+		fprintf(stderr, "ERROR: %s\n", strerror(errno));
+		exit (1);
+	}
+	if (pid == 0) {
+		close(p_hijos[0]);
+		dup2(p_hijos[1], STDOUT_FILENO);
+		close(p_hijos[1]);
+		execvp(linea -> commands[0].argv[0], linea -> commands[0].argv);
+	} else {
+		close(p_hijos[1]);
+
+		pid = fork(); // Hijo 2
+		if (pid == 0) {
+			close (p_hijos[1]);
+			dup2(p_hijos[0], STDIN_FILENO);
+			close(p_hijos[0]);
+			execvp(linea -> commands[1].argv[0], linea -> commands[1].argv);
+		} else
+			close(p_hijos[0]);
+	}
+	wait(&status);
+	wait(&status);
+}
+
 int	entrada(tline *linea){
 	int	fd;
 
@@ -83,6 +115,13 @@ int	entrada(tline *linea){
 	if (fd == -1)
 		fprintf(stderr, "ERROR: %s\n", strerror(errno));
 	return (fd);
+}
+
+void	comprobacionBg(tline *linea){
+	if (linea->background)
+		signal (SIGINT, SIG_IGN);
+	else
+		signal (SIGINT, SIG_DFL);
 }
 
 int	main() {
@@ -94,6 +133,7 @@ int	main() {
 	int		fd_error = dup(2);
 
 	prompt();
+	//signal(SIGINT, SIG_IGN); //Si se queda colgado no podemos hacer el ctrlC
 	while (fgets(buf, BSIZE, stdin))	//Lee una linea que introduzca el usuario y la tokeniza? para procesarla
 	{
 		linea = tokenize(buf); //Leemos linea del teclado
@@ -119,7 +159,8 @@ int	main() {
 				cd(linea);
 			else
 				leerUno(linea);
-		}
+		} else if (linea -> ncommands == 2)
+			dosComandos(linea);
 
 		if (linea -> redirect_input)
 			dup2(fd_in, 0);
