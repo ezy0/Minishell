@@ -46,13 +46,19 @@ int	cd(tline *linea) {
 	return 0;
 }
 
+void	comprobacionBg(tline *linea){
+	if (linea->background)
+		signal (SIGINT, SIG_IGN);
+	else
+		signal (SIGINT, SIG_DFL);
+}
 
 void leerUno(tline *linea) {
 	pid_t  pid; //En esta variable se guardará lo que devuelva el fork(). Si == 0, es el hijo. Si es > 0 es el padre. Si es < 0, error
 	int status;
 
+	comprobacionBg(linea);
 	pid = fork();
-	
 	if (pid < 0) { //Error en el fork
 		linea -> redirect_error = "ERROR: El fork ha fallado" ;
 		printf("ERROR: El fork ha fallado");
@@ -92,6 +98,8 @@ void	dosComandos(tline *linea){
 		dup2(p_hijos[1], STDOUT_FILENO);
 		close(p_hijos[1]);
 		execvp(linea -> commands[0].argv[0], linea -> commands[0].argv);
+		printf("ERROR: El mandato %s no existe\n" ,linea -> commands[0].argv[0]); //En caso de error
+		exit(1);
 	} else {
 		close(p_hijos[1]);
 
@@ -101,6 +109,8 @@ void	dosComandos(tline *linea){
 			dup2(p_hijos[0], STDIN_FILENO);
 			close(p_hijos[0]);
 			execvp(linea -> commands[1].argv[0], linea -> commands[1].argv);
+			printf("ERROR: El mandato %s no existe\n" ,linea -> commands[1].argv[0]); //En caso de error
+			exit(1);
 		} else
 			close(p_hijos[0]);
 	}
@@ -117,13 +127,6 @@ int	entrada(tline *linea){
 	return (fd);
 }
 
-void	comprobacionBg(tline *linea){
-	if (linea->background)
-		signal (SIGINT, SIG_IGN);
-	else
-		signal (SIGINT, SIG_DFL);
-}
-
 int	main() {
 	char	buf[BSIZE];
 	tline	*linea;
@@ -135,9 +138,9 @@ int	main() {
 	int		fd_error = dup(2);
 
 	prompt();
-	//signal(SIGINT, SIG_IGN); //Si se queda colgado no podemos hacer el ctrlC
 	while (fgets(buf, BSIZE, stdin))
 	{
+		signal(SIGINT, SIG_IGN);
 		linea = tokenize(buf); //Leemos linea del teclado
 		if (linea == NULL)
 			continue;
