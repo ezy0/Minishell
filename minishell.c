@@ -128,21 +128,25 @@ int	main() {
 	char	buf[BSIZE];
 	tline	*linea;
 
+	int		in_error = 0; //Nos servirá de flag para evitar ejecutar un comando con una entrada no válida y que se nos quede colgado
+
 	int 	fd_in = dup(0);
 	int		fd_out = dup(1);	//Creas un file descriptor para la salida y lo duplicas, 1 para salida
 	int		fd_error = dup(2);
 
 	prompt();
 	//signal(SIGINT, SIG_IGN); //Si se queda colgado no podemos hacer el ctrlC
-	while (fgets(buf, BSIZE, stdin))	//Lee una linea que introduzca el usuario y la tokeniza? para procesarla
+	while (fgets(buf, BSIZE, stdin))
 	{
 		linea = tokenize(buf); //Leemos linea del teclado
 		if (linea == NULL)
 			continue;
 
 		//	Redireccion de entrada
-		if (linea -> redirect_input)
-			dup2(entrada(linea), 0);	//Cuando grep falla no vuelve a mostrar el prompt después
+		if (linea -> redirect_input) {
+			in_error = entrada(linea);
+			dup2(in_error, 0);	//Cuando grep falla no vuelve a mostrar el prompt después
+		}
 		// Redireccion de salida
 		if (linea -> redirect_output)
 			dup2(open(linea->redirect_output, O_CREAT | O_WRONLY, 0642), 1); 
@@ -151,7 +155,7 @@ int	main() {
 			dup2(open(linea->redirect_error, O_CREAT | O_WRONLY, 0642), 2);
 
 		//Leer 1 comando de la linea
-		if (linea -> ncommands == 1)
+		if (linea -> ncommands == 1 && in_error != -1)
 		{
 			if (strcmp(linea -> commands[0].argv[0], "exit") == 0)
 				exit (0);
@@ -159,7 +163,7 @@ int	main() {
 				cd(linea);
 			else
 				leerUno(linea);
-		} else if (linea -> ncommands == 2)
+		} else if (linea -> ncommands == 2 && in_error != -1)
 			dosComandos(linea);
 
 		if (linea -> redirect_input)
