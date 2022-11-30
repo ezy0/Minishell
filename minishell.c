@@ -74,48 +74,102 @@ void leerUno(tline *linea) {
 	}
 
 	else{
-		wait (&status);
-		if (WIFEXITED(status) != 0) //El valor devuelto por WIFEXITED será 0 cuando el hijo ha terminado de una manera anormal.
-			if (WEXITSTATUS(status) != 0)//WEXITSTATUS devuelve el valor que ha pasado el hijo a la función exit()
-				printf("ERROR: El comando no se ejecutó correctamente\n");
+		if (linea->background)
+			waitpid(pid, &status, WNOHANG);
+		else {
+			waitpid(pid, &status, 0);
+			if (WIFEXITED(status) != 0) //El valor devuelto por WIFEXITED será 0 cuando el hijo ha terminado de una manera anormal.
+				if (WEXITSTATUS(status) != 0)//WEXITSTATUS devuelve el valor que ha pasado el hijo a la función exit()
+					printf("ERROR: El comando no se ejecutó correctamente\n");
+		}
 	}
-
 }
 
-void	dosComandos(tline *linea){
+void	variosComandos(tline *linea){
 	pid_t	pid;
-	int		p_hijos[2];
+	int		**p_hijos;
 	int		status;
+	int		i = -1;	//i es un contador
+	int		j, k; //j es un limite para crear los pipes y k un contador que usaremos para ir cerrando pipes
 
-	pipe(p_hijos);
+	j = linea->ncommands - 2;
+	k = 0;
+	p_hijos = (int **)malloc(sizeof(int *) * j);
+	while (++i <= j)
+		p_hijos[i] = (int *)malloc(sizeof(int) * 3);
+	i = 0;
+	comprobacionBg(linea);
+	pipe(p_hijos[0]);
 	pid = fork();
 	if (pid < 0) {
 		fprintf(stderr, "ERROR: %s\n", strerror(errno));
 		exit (1);
 	}
 	if (pid == 0) {
-		close(p_hijos[0]);
-		dup2(p_hijos[1], STDOUT_FILENO);
-		close(p_hijos[1]);
+		close(p_hijos[0][0]);
+		dup2(p_hijos[0][1], STDOUT_FILENO);
+		/*while(++k <= j){ //Cerramos el resto de pipes que no nos interesan	
+			close (p_hijos[k][0]);
+			close (p_hijos[k][1]);
+		}*/
 		execvp(linea -> commands[0].argv[0], linea -> commands[0].argv);
 		printf("ERROR: El mandato %s no existe\n" ,linea -> commands[0].argv[0]); //En caso de error
 		exit(1);
 	} else {
-		close(p_hijos[1]);
+		/*if (linea->ncommands > 2) {
+			while (++i <= j)
+				pipe(p_hijos[i]);
+			i = 0;
+			k = -1;
+			while (++i <= j){
+				pid = fork();
 
-		pid = fork(); // Hijo 2
-		if (pid == 0) {
-			close (p_hijos[1]);
-			dup2(p_hijos[0], STDIN_FILENO);
-			close(p_hijos[0]);
-			execvp(linea -> commands[1].argv[0], linea -> commands[1].argv);
-			printf("ERROR: El mandato %s no existe\n" ,linea -> commands[1].argv[0]); //En caso de error
+				if (pid < 0) {
+					fprintf(stderr, "ERROR: %s\n", strerror(errno));
+					exit (1);
+				}
+				if (pid == 0) {
+					close(p_hijos[i-1][1]);
+					dup2(p_hijos[i-1][0], STDIN_FILENO);
+					close(p_hijos[i][0]);
+					dup2(p_hijos[i][1], STDOUT_FILENO);
+					while(++k <= j)	//Cerramos el resto de pipes que no nos interesan
+						if (k != i && k != i - 1){
+							close (p_hijos[k][0]);
+							close (p_hijos[k][1]);
+						}
+					execvp(linea -> commands[i].argv[0], linea -> commands[i].argv);
+					printf("ERROR: El mandato %s no existe\n" ,linea -> commands[i].argv[0]); //En caso de error
+					exit(1);
+				}
+			}
+		}*/
+		pid = fork(); // Último hijo
+
+		if (pid < 0) {
+			fprintf(stderr, "ERROR: %s\n", strerror(errno));
+			exit (1);
+		}
+		else if (pid == 0) {
+			k = -1;
+			close (p_hijos[j][1]);
+			dup2(p_hijos[j][0], STDIN_FILENO);
+			while(++k < j){ //Cerramos el resto de pipes que no nos interesan	
+				close (p_hijos[k][0]);
+				close (p_hijos[k][1]);
+			}
+			execvp(linea -> commands[j + 1].argv[0], linea -> commands[j + 1].argv);
+			printf("ERROR: El mandato %s no existe\n" ,linea -> commands[j + 1].argv[0]); //En caso de error
 			exit(1);
-		} else
-			close(p_hijos[0]);
-	}
-	wait(&status);
-	wait(&status);
+		}
+	}	//Padre
+	i = 0;
+	k = -1;
+	while (++k < linea -> ncommands)
+		wait(&status);
+	free (p_hijos);
+	while (++i <= j)
+		free(p_hijos[i]);
 }
 
 int	entrada(tline *linea){
@@ -137,10 +191,10 @@ int	main() {
 	int		fd_out = dup(1);	//Creas un file descriptor para la salida y lo duplicas, 1 para salida
 	int		fd_error = dup(2);
 
+	signal(SIGINT, SIG_IGN);
 	prompt();
 	while (fgets(buf, BSIZE, stdin))
 	{
-		signal(SIGINT, SIG_IGN);
 		linea = tokenize(buf); //Leemos linea del teclado
 		if (linea == NULL)
 			continue;
@@ -166,8 +220,8 @@ int	main() {
 				cd(linea);
 			else
 				leerUno(linea);
-		} else if (linea -> ncommands == 2 && in_error != -1)
-			dosComandos(linea);
+		} else if (linea -> ncommands >= 2 && in_error != -1)
+			variosComandos(linea);
 
 		if (linea -> redirect_input)
 			dup2(fd_in, 0);
