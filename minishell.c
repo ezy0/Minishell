@@ -89,18 +89,18 @@ void	variosComandos(tline *linea){
 	pid_t	pid;
 	int		**p_hijos;
 	int		status;
-	int		i = -1;	//i es un contador
-	int		j, k; //j es un limite para crear los pipes y k un contador que usaremos para ir cerrando pipes
+	int		i, j, k; //j es un limite para crear los pipes, i y k son contadores
 
-	j = linea->ncommands - 2;
-	k = 0;
+	j = linea -> ncommands - 2;
+	// Asignamos memoria para el array de pipes
 	p_hijos = (int **)malloc(sizeof(int *) * j);
-	while (++i <= j)
+	for (i = 0; i <= j; i++)
 		p_hijos[i] = (int *)malloc(sizeof(int) * 3);
-	i = 0;
+	
 	comprobacionBg(linea);
 	pipe(p_hijos[0]);
-	pid = fork();
+
+	pid = fork();	//Primer hijo
 	if (pid < 0) {
 		fprintf(stderr, "ERROR: %s\n", strerror(errno));
 		exit (1);
@@ -108,20 +108,14 @@ void	variosComandos(tline *linea){
 	if (pid == 0) {
 		close(p_hijos[0][0]);
 		dup2(p_hijos[0][1], STDOUT_FILENO);
-		/*while(++k <= j){ //Cerramos el resto de pipes que no nos interesan	
-			close (p_hijos[k][0]);
-			close (p_hijos[k][1]);
-		}*/
 		execvp(linea -> commands[0].argv[0], linea -> commands[0].argv);
 		printf("ERROR: El mandato %s no existe\n" ,linea -> commands[0].argv[0]); //En caso de error
 		exit(1);
 	} else {
-		/*if (linea->ncommands > 2) {
-			while (++i <= j)
+		if (linea->ncommands > 2) {
+			for (i = 1; i <= j; i++)
 				pipe(p_hijos[i]);
-			i = 0;
-			k = -1;
-			while (++i <= j){
+			for (i = 1; i <= j; i++){
 				pid = fork();
 
 				if (pid < 0) {
@@ -133,7 +127,7 @@ void	variosComandos(tline *linea){
 					dup2(p_hijos[i-1][0], STDIN_FILENO);
 					close(p_hijos[i][0]);
 					dup2(p_hijos[i][1], STDOUT_FILENO);
-					while(++k <= j)	//Cerramos el resto de pipes que no nos interesan
+					for (k = 0; k <= j; k++)	//Cerramos el resto de pipes que no nos interesan
 						if (k != i && k != i - 1){
 							close (p_hijos[k][0]);
 							close (p_hijos[k][1]);
@@ -143,7 +137,7 @@ void	variosComandos(tline *linea){
 					exit(1);
 				}
 			}
-		}*/
+		}
 		pid = fork(); // Último hijo
 
 		if (pid < 0) {
@@ -151,10 +145,9 @@ void	variosComandos(tline *linea){
 			exit (1);
 		}
 		else if (pid == 0) {
-			k = -1;
 			close (p_hijos[j][1]);
 			dup2(p_hijos[j][0], STDIN_FILENO);
-			while(++k < j){ //Cerramos el resto de pipes que no nos interesan	
+			for (k = 0; k < j; k++){ //Cerramos el resto de pipes que no nos interesan	
 				close (p_hijos[k][0]);
 				close (p_hijos[k][1]);
 			}
@@ -163,13 +156,16 @@ void	variosComandos(tline *linea){
 			exit(1);
 		}
 	}	//Padre
-	i = 0;
-	k = -1;
-	while (++k < linea -> ncommands)
+	for(k = 0; k <= j; k++){ //Cerramos todos los pipes	
+		close (p_hijos[k][0]);
+		close (p_hijos[k][1]);
+	}
+	for (k = 0; k < linea -> ncommands; k++)// Esperamos a que acaben todos los hijos
 		wait(&status);
-	free (p_hijos);
-	while (++i <= j)
+	// Liberamos toda la memoria que hemos reservado con malloc
+	for (i = 1; i <= j; i++)
 		free(p_hijos[i]);
+	free(p_hijos);
 }
 
 int	entrada(tline *linea){
