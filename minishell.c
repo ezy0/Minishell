@@ -11,6 +11,21 @@
 
 int BSIZE = 1024;
 
+typedef struct Job{
+    pid_t	pid;
+    char	*nombre;
+}tJob;
+
+typedef struct s_list{
+	tJob			*job;
+	struct s_list	*next;
+} t_list;
+
+tJob 	*CrearJob(int pid, char *buf);
+t_list	*CrearListaJobs();
+void	addJob(t_list *lst, tJob *new_job);
+void	mostrarJobs(t_list *lista);
+
 void	prompt() {
 	char	dir[BSIZE];
 
@@ -53,7 +68,7 @@ void	comprobacionBg(tline *linea){
 		signal (SIGINT, SIG_DFL);
 }
 
-void leerUno(tline *linea) {
+void leerUno(tline *linea, t_list *lista_jobs, char *buf) {
 	pid_t  pid; //En esta variable se guardará lo que devuelva el fork(). Si == 0, es el hijo. Si es > 0 es el padre. Si es < 0, error
 	int status;
 
@@ -64,7 +79,6 @@ void leerUno(tline *linea) {
 		printf("ERROR: El fork ha fallado");
 		exit(1);
 	}
-
 	else if(pid == 0){
 		execvp(linea -> commands -> argv[0], linea->commands -> argv); //Ejecuta el comando y los argumentos, empezando por 1 más ya que el primero en el array es el propio comando
 		//Saltará a la siguiente linea si se ha producido un error
@@ -72,20 +86,21 @@ void leerUno(tline *linea) {
 		printf("ERROR: El mandato %s no existe\n" ,linea -> commands -> argv[0]);
 		exit(1);
 	}
-
 	else{
-		if (linea->background)
-			waitpid(pid, &status, WNOHANG);
-		else {
-			waitpid(pid, &status, 0);
-			if (WIFEXITED(status) != 0) //El valor devuelto por WIFEXITED será 0 cuando el hijo ha terminado de una manera anormal.
-				if (WEXITSTATUS(status) != 0)//WEXITSTATUS devuelve el valor que ha pasado el hijo a la función exit()
-					printf("ERROR: El comando no se ejecutó correctamente\n");
-		}
+		if(linea->background ==1){  
+            waitpid(pid,&status,WNOHANG);
+            printf("[%d]\n",pid);
+            addJob(lista_jobs, CrearJob(pid, buf));
+        }else{
+            waitpid (pid,&status,0);
+            if (WIFEXITED(status) != 0) 
+                if (WEXITSTATUS(status) != 0)
+                    printf("ERROR: El comando no se ejecutó correctamente\n");  
+        }
 	}
 }
 
-void	variosComandos(tline *linea){
+void	variosComandos(tline *linea, t_list *lista_jobs, char *buf){
 	pid_t	pid;
 	int		**p_hijos;
 	int		status;
@@ -123,6 +138,7 @@ void	variosComandos(tline *linea){
 					exit (1);
 				}
 				if (pid == 0) {
+					comprobacionBg(linea);
 					close(p_hijos[i-1][1]);
 					dup2(p_hijos[i-1][0], STDIN_FILENO);
 					close(p_hijos[i][0]);
@@ -139,12 +155,12 @@ void	variosComandos(tline *linea){
 			}
 		}
 		pid = fork(); // Último hijo
-
 		if (pid < 0) {
 			fprintf(stderr, "ERROR: %s\n", strerror(errno));
 			exit (1);
 		}
 		else if (pid == 0) {
+			comprobacionBg(linea);
 			close (p_hijos[j][1]);
 			dup2(p_hijos[j][0], STDIN_FILENO);
 			for (k = 0; k < j; k++){ //Cerramos el resto de pipes que no nos interesan	
@@ -160,8 +176,13 @@ void	variosComandos(tline *linea){
 		close (p_hijos[k][0]);
 		close (p_hijos[k][1]);
 	}
-	for (k = 0; k < linea -> ncommands; k++)// Esperamos a que acaben todos los hijos
-		wait(&status);
+	if(linea->background ==1){  
+        waitpid(pid,&status,WNOHANG);
+        printf("[%d]\n",pid);
+        addJob(lista_jobs, CrearJob(pid, buf));
+	}else
+		for (k = 0; k < linea -> ncommands; k++)// Esperamos a que acaben todos los hijos
+			wait(&status);
 	// Liberamos toda la memoria que hemos reservado con malloc
 	for (i = 1; i <= j; i++)
 		free(p_hijos[i]);
@@ -177,6 +198,23 @@ int	entrada(tline *linea){
 	return (fd);
 }
 
+void	foreground(tline *linea, t_list	*lista_jobs){
+	int num = atoi(linea->commands[0].argv[1]);
+	int i = 0;
+	while (lista_jobs[i].job != NULL)
+		i++;
+	if (i + 1 < num)
+	{
+		fprintf(stderr, "%s: %s\n", linea->commands[0].argv[0], strerror(errno));
+		return;
+	}
+	int status;
+	pid_t fg_wait = waitpid(num, &status, 0);
+	int fg_return = kill(fg_wait, SIGCONT);
+	if(fg_return<0 || fg_wait<0)
+			printf("Snap error, cannot bring process to foreground\n");
+}
+
 int	main() {
 	char	buf[BSIZE];
 	tline	*linea;
@@ -187,7 +225,10 @@ int	main() {
 	int		fd_out = dup(1);	//Creas un file descriptor para la salida y lo duplicas, 1 para salida
 	int		fd_error = dup(2);
 
-	signal(SIGINT, SIG_IGN);
+	t_list	*lista_jobs = CrearListaJobs();	//Creamos una lista vacía para ir guardando los mandatos en bg
+
+	signal (SIGINT, SIG_IGN);
+
 	prompt();
 	while (fgets(buf, BSIZE, stdin))
 	{
@@ -210,14 +251,22 @@ int	main() {
 		//Leer 1 comando de la linea
 		if (linea -> ncommands == 1 && in_error != -1)
 		{
-			if (strcmp(linea -> commands[0].argv[0], "exit") == 0)
+			if (strcmp(linea -> commands[0].argv[0], "exit") == 0){
+				free(lista_jobs);
 				exit (0);
-			if (strcmp(linea -> commands[0].argv[0], "cd") == 0)
+			}
+			else if (strcmp(linea -> commands[0].argv[0], "cd") == 0)
 				cd(linea);
+			else if (strcmp(linea -> commands[0].argv[0], "jobs") == 0){
+				if (lista_jobs->job != NULL)
+					mostrarJobs(lista_jobs);
+			}
+			else if (strcmp(linea -> commands[0].argv[0], "fg") == 0)
+				foreground(linea, lista_jobs);
 			else
-				leerUno(linea);
+				leerUno(linea, lista_jobs, buf);
 		} else if (linea -> ncommands >= 2 && in_error != -1)
-			variosComandos(linea);
+			variosComandos(linea, lista_jobs, buf);
 
 		if (linea -> redirect_input)
 			dup2(fd_in, 0);
@@ -226,6 +275,84 @@ int	main() {
 		if (linea -> redirect_error)
 			dup2(fd_error, 2);
 
+		signal (SIGINT, SIG_IGN);
 		prompt();
 	}
+}
+
+tJob *CrearJob(int pid, char *buf){ //La funcion podria ser void si queremos modificar un job que se pasa, sino deberíamos hacer un malloc y no pasar ningun job. La memoria reservada se liberaria en una funcion de quitar jobs
+    tJob	*job;
+	char	*aux;
+	int		i = 0;
+
+	aux = buf;
+	while (aux[i] != '&')
+		i++;
+	aux[strlen(buf) - (strlen(buf) - i)] = '\0';
+	job = (tJob *)malloc(sizeof(tJob));
+	job->pid=pid;
+	job->nombre = strdup(aux);
+    return job;
+}
+
+t_list	*CrearListaJobs()
+{
+	t_list	*list;
+
+	list = (t_list *)malloc(sizeof(t_list));
+	if (!list)
+		return (0);
+	list->job = NULL;
+	list->next = NULL;
+	return (list);
+}
+
+/*tJob *addJob(tJob *lista,int pid){  //Puntero a funcion tJob y no devuelve nada, podria ser void y modificar la lista que se pasa
+    tJob *nuevoJob;
+    tJob *buscador;
+
+    nuevoJob=(tJob*)malloc(sizeof(tJob));
+    nuevoJob->pid=pid;
+    nuevoJob->next=NULL;
+    if(lista=NULL)
+        lista=nuevoJob;
+    else{
+        buscador = lista;
+        while(buscador->next=NULL){
+            buscador=buscador->next;
+        }
+        buscador->next =nuevoJob;
+    }
+}*/
+
+void	addJob(t_list *lst, tJob *new_job)
+{
+	t_list	*aux;
+	t_list	*new;
+
+	new = (t_list *)malloc(sizeof(t_list));
+	if (lst->job == NULL){
+		lst->job = new_job;
+		free(new);
+	}
+	else
+	{
+		aux = lst;
+		while (aux->next != NULL)
+			aux = aux->next;
+		new->job = new_job;
+		new->next = NULL;
+		aux->next = new;
+	}
+}
+
+void	mostrarJobs(t_list *lista){
+    int num = 1;
+	t_list *aux = lista;
+
+    while(aux->next!=NULL){
+        printf("[%d]	running		%s\n",num++, aux->job->nombre);
+        aux=aux->next;
+    }
+	printf("[%d]	running		%s\n",num++, aux->job->nombre);
 }
