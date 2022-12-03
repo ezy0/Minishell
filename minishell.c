@@ -25,6 +25,7 @@ tJob 	*CrearJob(int pid, char *buf);
 t_list	*CrearListaJobs();
 void	addJob(t_list *lst, tJob *new_job);
 void	mostrarJobs(t_list *lista);
+void	freeLista(t_list *lista);
 
 void	prompt() {
 	char	dir[BSIZE];
@@ -208,11 +209,12 @@ void	foreground(tline *linea, t_list	*lista_jobs){
 		fprintf(stderr, "%s: %s\n", linea->commands[0].argv[0], strerror(errno));
 		return;
 	}
+	pid_t pid= lista_jobs[num - 1].job->pid;
 	int status;
-	pid_t fg_wait = waitpid(num, &status, 0);
+	pid_t fg_wait = waitpid(pid, &status, 0);
 	int fg_return = kill(fg_wait, SIGCONT);
-	if(fg_return<0 || fg_wait<0)
-			printf("Snap error, cannot bring process to foreground\n");
+	if(fg_return < 0 || fg_wait < 0)
+		printf("Snap error, cannot bring process to foreground\n");
 }
 
 int	main() {
@@ -252,7 +254,7 @@ int	main() {
 		if (linea -> ncommands == 1 && in_error != -1)
 		{
 			if (strcmp(linea -> commands[0].argv[0], "exit") == 0){
-				free(lista_jobs);
+				freeLista(lista_jobs);
 				exit (0);
 			}
 			else if (strcmp(linea -> commands[0].argv[0], "cd") == 0)
@@ -355,4 +357,16 @@ void	mostrarJobs(t_list *lista){
         aux=aux->next;
     }
 	printf("[%d]	running		%s\n",num++, aux->job->nombre);
+}
+
+void	freeLista(t_list *lista_jobs){
+	t_list *aux = lista_jobs;
+	while (aux){
+		free(lista_jobs->job);
+		lista_jobs = lista_jobs->next;
+		free(aux);
+		aux = lista_jobs;
+	}
+	free (lista_jobs);
+	free(aux);
 }
