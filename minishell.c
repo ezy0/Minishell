@@ -220,6 +220,28 @@ t_list	*foreground(tline *linea, t_list	*lista_jobs){
 		DeleteJob(pid, lista_jobs);*/
 }
 
+int powAux(int numero, int potencia)
+{
+    int resultado = 1;
+	int i;
+
+	for (i = 1; i <= potencia; ++i)
+		resultado = resultado * numero;
+    return resultado;
+}
+
+unsigned int octalADecimal(int octal) {
+	int	decimal = 0;
+	int i = 0;
+
+    while (octal != 0)
+    {
+        decimal =  decimal + (octal % 10)* powAux(8, i++);
+        octal = octal / 10;
+    }
+	return (decimal);
+}
+
 int	main() {
 	char	buf[BSIZE];
 	tline	*linea;
@@ -231,8 +253,6 @@ int	main() {
 	int		fd_error = dup(2);
 
 	t_list	*lista_jobs = CrearListaJobs();	//Creamos una lista vacía para ir guardando los mandatos en bg
-
-	mode_t	mask;	//Máscara para el umask
 
 	signal (SIGINT, SIG_IGN);
 
@@ -270,10 +290,8 @@ int	main() {
 			}
 			else if (strcmp(linea -> commands[0].argv[0], "fg") == 0)
 				lista_jobs = foreground(linea, lista_jobs);
-			else if (strcmp(linea -> commands[0].argv[0], "umask") == 0){
-				mask = atoi(linea->commands[0].argv[1]);
-				umask(mask);
-			}
+			else if (strcmp(linea -> commands[0].argv[0], "umask") == 0)
+				umask(octalADecimal(atoi(linea->commands[0].argv[1])));
 			else
 				leerUno(linea, lista_jobs, buf);
 		} else if (linea -> ncommands >= 2 && in_error != -1)
