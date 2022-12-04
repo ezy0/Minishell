@@ -8,6 +8,7 @@
 #include <signal.h>
 #include <sys/types.h> //wait
 #include <sys/wait.h>  //wait
+#include <sys/stat.h>  //umask
 
 int BSIZE = 1024;
 
@@ -26,6 +27,8 @@ t_list	*CrearListaJobs();
 void	addJob(t_list *lst, tJob *new_job);
 void	mostrarJobs(t_list *lista);
 void	freeLista(t_list *lista);
+t_list	*DeleteJob(int pid, t_list *lista);
+int		sizeList(t_list *lista);
 
 void	prompt() {
 	char	dir[BSIZE];
@@ -90,7 +93,7 @@ void leerUno(tline *linea, t_list *lista_jobs, char *buf) {
 	else{
 		if(linea->background ==1){  
             waitpid(pid,&status,WNOHANG);
-            printf("[%d]\n",pid);
+            printf("[%d] %d\n", sizeList(lista_jobs)+1, pid);
             addJob(lista_jobs, CrearJob(pid, buf));
         }else{
             waitpid (pid,&status,0);
@@ -199,22 +202,22 @@ int	entrada(tline *linea){
 	return (fd);
 }
 
-void	foreground(tline *linea, t_list	*lista_jobs){
+t_list	*foreground(tline *linea, t_list	*lista_jobs){
 	int num = atoi(linea->commands[0].argv[1]);
-	int i = 0;
-	while (lista_jobs[i].job != NULL)
-		i++;
-	if (i + 1 < num)
+	if (sizeList(lista_jobs) < num)
 	{
 		fprintf(stderr, "%s: %s\n", linea->commands[0].argv[0], strerror(errno));
-		return;
+		return lista_jobs;
 	}
 	pid_t pid= lista_jobs[num - 1].job->pid;
 	int status;
 	pid_t fg_wait = waitpid(pid, &status, 0);
 	int fg_return = kill(fg_wait, SIGCONT);
-	if(fg_return < 0 || fg_wait < 0)
+	return (DeleteJob(pid, lista_jobs));
+	/*if(fg_return < 0 || fg_wait < 0)
 		printf("Snap error, cannot bring process to foreground\n");
+	else
+		DeleteJob(pid, lista_jobs);*/
 }
 
 int	main() {
@@ -228,6 +231,8 @@ int	main() {
 	int		fd_error = dup(2);
 
 	t_list	*lista_jobs = CrearListaJobs();	//Creamos una lista vacía para ir guardando los mandatos en bg
+
+	mode_t	mask;	//Máscara para el umask
 
 	signal (SIGINT, SIG_IGN);
 
@@ -260,11 +265,15 @@ int	main() {
 			else if (strcmp(linea -> commands[0].argv[0], "cd") == 0)
 				cd(linea);
 			else if (strcmp(linea -> commands[0].argv[0], "jobs") == 0){
-				if (lista_jobs->job != NULL)
+				if (sizeList(lista_jobs) > 0)
 					mostrarJobs(lista_jobs);
 			}
 			else if (strcmp(linea -> commands[0].argv[0], "fg") == 0)
-				foreground(linea, lista_jobs);
+				lista_jobs = foreground(linea, lista_jobs);
+			else if (strcmp(linea -> commands[0].argv[0], "umask") == 0){
+				mask = atoi(linea->commands[0].argv[1]);
+				umask(mask);
+			}
 			else
 				leerUno(linea, lista_jobs, buf);
 		} else if (linea -> ncommands >= 2 && in_error != -1)
@@ -309,24 +318,6 @@ t_list	*CrearListaJobs()
 	return (list);
 }
 
-/*tJob *addJob(tJob *lista,int pid){  //Puntero a funcion tJob y no devuelve nada, podria ser void y modificar la lista que se pasa
-    tJob *nuevoJob;
-    tJob *buscador;
-
-    nuevoJob=(tJob*)malloc(sizeof(tJob));
-    nuevoJob->pid=pid;
-    nuevoJob->next=NULL;
-    if(lista=NULL)
-        lista=nuevoJob;
-    else{
-        buscador = lista;
-        while(buscador->next=NULL){
-            buscador=buscador->next;
-        }
-        buscador->next =nuevoJob;
-    }
-}*/
-
 void	addJob(t_list *lst, tJob *new_job)
 {
 	t_list	*aux;
@@ -367,6 +358,53 @@ void	freeLista(t_list *lista_jobs){
 		free(aux);
 		aux = lista_jobs;
 	}
-	free (lista_jobs);
-	free(aux);
+}
+
+t_list	*DeleteJob(int pid, t_list *lista){
+	t_list *actual = lista;
+	t_list *ant= NULL;
+	
+	if(actual->job->pid==pid){
+		if (sizeList(lista)==1){
+			free(lista->job);
+			lista->job = NULL;
+		}else{
+			lista = lista->next;
+			free(actual->job);
+			free(actual);
+		}
+	}else{
+		while(actual->next!=NULL && actual->job->pid!=pid){
+			ant=actual;
+			actual=actual->next;
+		}
+		if(actual->job->pid==pid){//Lo ha encontrado. Puede haber 2 casos, que sea el ultimo, o uno que esté por el medio
+			if(actual->next==NULL){ //Es el ultimo
+				free(actual->job);
+				free(actual);
+				ant->next=NULL;
+			}else{ //En el medio
+				ant->next = actual->next;
+				free(actual->job);
+				free(actual);
+			}
+			printf("job (no primero) eliminado\n");
+		}else{
+			printf("El pid introducido no se ha encontrado\n");
+		}
+	}
+	return (lista);
+}
+
+int		sizeList(t_list *lista){
+	int	i = 0;
+	t_list *aux = lista;
+
+	if(lista->job == NULL)
+		return (i);
+	while(aux->next){
+		i++;
+		aux = aux->next;
+	}
+	return(i + 1);
 }
