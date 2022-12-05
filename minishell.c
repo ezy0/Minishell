@@ -10,9 +10,9 @@
 #include <sys/wait.h>  //wait
 #include <sys/stat.h>  //umask
 
-int BSIZE = 1024;
+int BSIZE = 1024;	//Tamaño del buffer
 
-typedef struct Job{
+typedef struct Job{	//Struct de job y de lista para guardar los jobs
     pid_t	pid;
     char	*nombre;
 }tJob;
@@ -22,6 +22,19 @@ typedef struct s_list{
 	struct s_list	*next;
 } t_list;
 
+void	prompt();	//Funcion para mostrar el prompt
+int		cd(tline *linea); //Funcion para el mandato cd
+void	comprobacionBg(tline *linea); //Funcion para comprobar si está en bg, y cambiar la señal Ctrl+C
+void 	leerUno(tline *linea, t_list *lista_jobs, char *buf); //Funcion encargada de ejecutar 1 mandato
+void	variosComandos(tline *linea, t_list *lista_jobs, char *buf); //Funcion encargada de ejecutar de 2 a más mandatos
+int		entrada(tline *linea); //Funcion encargada de redireccionar la entrada
+t_list	*foreground(tline *linea, t_list	*lista_jobs); //Funcion encargada de ejecutar fg
+
+//Funciones encargadas del umask
+int 	powAux(int numero, int potencia);	//Esta funcion simula la funcion pow de la libreria math, potencia de un numero
+unsigned int octalADecimal(int octal);	//Recoje el valor pasado por pantalla y lo transforma a decimal para pasarselo a umask
+
+//Mandatos para gestionar la lista de jobs
 tJob 	*CrearJob(int pid, char *buf);
 t_list	*CrearListaJobs();
 void	addJob(t_list *lst, tJob *new_job);
@@ -29,6 +42,78 @@ void	mostrarJobs(t_list *lista);
 void	freeLista(t_list *lista);
 t_list	*DeleteJob(int pid, t_list *lista);
 int		sizeList(t_list *lista);
+
+
+int	main() {
+	char	buf[BSIZE];
+	tline	*linea;
+
+	int		in_error = 0; //Nos servirá de flag para evitar ejecutar un comando con una entrada no válida y que se nos quede colgado
+
+	int 	fd_in = dup(0);
+	int		fd_out = dup(1);
+	int		fd_error = dup(2);
+
+	t_list	*lista_jobs = CrearListaJobs();	//Creamos una lista vacía para ir guardando los mandatos en bg
+
+	signal (SIGINT, SIG_IGN);
+
+	prompt();
+	while (fgets(buf, BSIZE, stdin))
+	{
+		linea = tokenize(buf); //Leemos linea del teclado
+		if (linea == NULL)
+			continue;
+
+		//	Redireccion de entrada
+		if (linea -> redirect_input) {
+			in_error = entrada(linea);
+			dup2(in_error, 0);	//Cuando grep falla no vuelve a mostrar el prompt después
+		}
+		// Redireccion de salida
+		if (linea -> redirect_output)
+			dup2(open(linea->redirect_output, O_CREAT | O_WRONLY, 0642), 1); 
+		//Redireccion de error
+		if (linea -> redirect_error)
+			dup2(open(linea->redirect_error, O_CREAT | O_WRONLY, 0642), 2);
+
+		//Leer 1 comando de la linea
+		if (linea -> ncommands == 1 && in_error != -1)
+		{
+			if (strcmp(linea -> commands[0].argv[0], "exit") == 0){
+				freeLista(lista_jobs);
+				exit (0);
+			}
+			else if (strcmp(linea -> commands[0].argv[0], "cd") == 0)
+				cd(linea);
+			else if (strcmp(linea -> commands[0].argv[0], "jobs") == 0){
+				if (sizeList(lista_jobs) > 0)
+					mostrarJobs(lista_jobs);
+			}
+			else if (strcmp(linea -> commands[0].argv[0], "fg") == 0)
+				lista_jobs = foreground(linea, lista_jobs);
+			else if (strcmp(linea -> commands[0].argv[0], "umask") == 0){
+				if (atoi(linea->commands[0].argv[1]) > 7777)
+					printf("umask: bas mask\n");
+				else
+				umask(octalADecimal(atoi(linea->commands[0].argv[1])));
+			}
+			else
+				leerUno(linea, lista_jobs, buf);
+		} else if (linea -> ncommands >= 2 && in_error != -1)
+			variosComandos(linea, lista_jobs, buf);
+
+		if (linea -> redirect_input)
+			dup2(fd_in, 0);
+		if (linea -> redirect_output)
+			dup2(fd_out, 1);	//Se vuelve a reestablecer la salida a su valor por defecto, 1
+		if (linea -> redirect_error)
+			dup2(fd_error, 2);
+
+		signal (SIGINT, SIG_IGN);
+		prompt();
+	}
+}
 
 void	prompt() {
 	char	dir[BSIZE];
@@ -240,73 +325,6 @@ unsigned int octalADecimal(int octal) {
         octal = octal / 10;
     }
 	return (decimal);
-}
-
-int	main() {
-	char	buf[BSIZE];
-	tline	*linea;
-
-	int		in_error = 0; //Nos servirá de flag para evitar ejecutar un comando con una entrada no válida y que se nos quede colgado
-
-	int 	fd_in = dup(0);
-	int		fd_out = dup(1);	//Creas un file descriptor para la salida y lo duplicas, 1 para salida
-	int		fd_error = dup(2);
-
-	t_list	*lista_jobs = CrearListaJobs();	//Creamos una lista vacía para ir guardando los mandatos en bg
-
-	signal (SIGINT, SIG_IGN);
-
-	prompt();
-	while (fgets(buf, BSIZE, stdin))
-	{
-		linea = tokenize(buf); //Leemos linea del teclado
-		if (linea == NULL)
-			continue;
-
-		//	Redireccion de entrada
-		if (linea -> redirect_input) {
-			in_error = entrada(linea);
-			dup2(in_error, 0);	//Cuando grep falla no vuelve a mostrar el prompt después
-		}
-		// Redireccion de salida
-		if (linea -> redirect_output)
-			dup2(open(linea->redirect_output, O_CREAT | O_WRONLY, 0642), 1); 
-		//Redireccion de error
-		if (linea -> redirect_error)
-			dup2(open(linea->redirect_error, O_CREAT | O_WRONLY, 0642), 2);
-
-		//Leer 1 comando de la linea
-		if (linea -> ncommands == 1 && in_error != -1)
-		{
-			if (strcmp(linea -> commands[0].argv[0], "exit") == 0){
-				freeLista(lista_jobs);
-				exit (0);
-			}
-			else if (strcmp(linea -> commands[0].argv[0], "cd") == 0)
-				cd(linea);
-			else if (strcmp(linea -> commands[0].argv[0], "jobs") == 0){
-				if (sizeList(lista_jobs) > 0)
-					mostrarJobs(lista_jobs);
-			}
-			else if (strcmp(linea -> commands[0].argv[0], "fg") == 0)
-				lista_jobs = foreground(linea, lista_jobs);
-			else if (strcmp(linea -> commands[0].argv[0], "umask") == 0)
-				umask(octalADecimal(atoi(linea->commands[0].argv[1])));
-			else
-				leerUno(linea, lista_jobs, buf);
-		} else if (linea -> ncommands >= 2 && in_error != -1)
-			variosComandos(linea, lista_jobs, buf);
-
-		if (linea -> redirect_input)
-			dup2(fd_in, 0);
-		if (linea -> redirect_output)
-			dup2(fd_out, 1);	//Se vuelve a reestablecer la salida a su valor por defecto, 1
-		if (linea -> redirect_error)
-			dup2(fd_error, 2);
-
-		signal (SIGINT, SIG_IGN);
-		prompt();
-	}
 }
 
 tJob *CrearJob(int pid, char *buf){ //La funcion podria ser void si queremos modificar un job que se pasa, sino deberíamos hacer un malloc y no pasar ningun job. La memoria reservada se liberaria en una funcion de quitar jobs
