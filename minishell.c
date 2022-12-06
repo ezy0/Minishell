@@ -29,6 +29,7 @@ void 	leerUno(tline *linea, t_list *lista_jobs, char *buf); //Funcion encargada 
 void	variosComandos(tline *linea, t_list *lista_jobs, char *buf); //Funcion encargada de ejecutar de 2 a más mandatos
 int		entrada(tline *linea); //Funcion encargada de redireccionar la entrada
 t_list	*foreground(tline *linea, t_list	*lista_jobs); //Funcion encargada de ejecutar fg
+void	handler(int sig);	//Encargada de mostrar prompt al hacer SIGINT
 
 //Funciones encargadas del umask
 int 	powAux(int numero, int potencia);	//Esta funcion simula la funcion pow de la libreria math, potencia de un numero
@@ -154,11 +155,18 @@ int	cd(tline *linea) {
 	return 0;
 }
 
+void	handler(int sig){
+	if (sig == SIGINT){
+		printf("\n");
+		return;
+	}
+}
+
 void	comprobacionBg(tline *linea){
 	if (linea->background)
 		signal (SIGINT, SIG_IGN);
 	else
-		signal (SIGINT, SIG_DFL);
+		signal (SIGINT, handler);
 }
 
 void leerUno(tline *linea, t_list *lista_jobs, char *buf) {
@@ -293,7 +301,7 @@ int	entrada(tline *linea){
 	return (fd);
 }
 
-t_list	*foreground(tline *linea, t_list	*lista_jobs){
+t_list	*foreground(tline *linea, t_list *lista_jobs){
 	int num = atoi(linea->commands[0].argv[1]);
 	int status;
 	pid_t pid, fg_wait;
