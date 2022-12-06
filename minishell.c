@@ -43,7 +43,6 @@ void	freeLista(t_list *lista);
 t_list	*DeleteJob(int pid, t_list *lista);
 int		sizeList(t_list *lista);
 
-
 int	main() {
 	char	buf[BSIZE];
 	tline	*linea;
@@ -68,7 +67,7 @@ int	main() {
 		//	Redireccion de entrada
 		if (linea -> redirect_input) {
 			in_error = entrada(linea);
-			dup2(in_error, 0);	//Cuando grep falla no vuelve a mostrar el prompt después
+			dup2(in_error, 0);
 		}
 		// Redireccion de salida
 		if (linea -> redirect_output)
@@ -80,33 +79,38 @@ int	main() {
 		//Leer 1 comando de la linea
 		if (linea -> ncommands == 1 && in_error != -1)
 		{
-			if (strcmp(linea -> commands[0].argv[0], "exit") == 0){
+			if (strcmp(linea -> commands[0].argv[0], "exit") == 0){	//En caso del exit queremos liberar toda la memoria de la lista de jobs
 				freeLista(lista_jobs);
 				exit (0);
 			}
 			else if (strcmp(linea -> commands[0].argv[0], "cd") == 0)
 				cd(linea);
 			else if (strcmp(linea -> commands[0].argv[0], "jobs") == 0){
-				if (sizeList(lista_jobs) > 0)
+				if (sizeList(lista_jobs) > 0)	//Comprobamos que no esté vacía para evitar un error
 					mostrarJobs(lista_jobs);
 			}
 			else if (strcmp(linea -> commands[0].argv[0], "fg") == 0)
 				lista_jobs = foreground(linea, lista_jobs);
 			else if (strcmp(linea -> commands[0].argv[0], "umask") == 0){
-				if (atoi(linea->commands[0].argv[1]) > 7777)
-					printf("umask: bas mask\n");
+				if (linea->commands[0].argc == 2){	//Comprobamos que haya argumentos y ponemos un límite a la entrada del usuario para evitar errores
+					if (atoi(linea->commands[0].argv[1]) > 7777)
+						printf("umask: bas mask\n");
+					else
+						umask(octalADecimal(atoi(linea->commands[0].argv[1])));
+				}
 				else
-				umask(octalADecimal(atoi(linea->commands[0].argv[1])));
+					printf ("Introduce solamente un argumento\n");
 			}
 			else
 				leerUno(linea, lista_jobs, buf);
 		} else if (linea -> ncommands >= 2 && in_error != -1)
 			variosComandos(linea, lista_jobs, buf);
 
+		//Volvemos a poner las entradas y salidas por defecto
 		if (linea -> redirect_input)
 			dup2(fd_in, 0);
 		if (linea -> redirect_output)
-			dup2(fd_out, 1);	//Se vuelve a reestablecer la salida a su valor por defecto, 1
+			dup2(fd_out, 1);
 		if (linea -> redirect_error)
 			dup2(fd_error, 2);
 
@@ -116,10 +120,10 @@ int	main() {
 }
 
 void	prompt() {
-	char	dir[BSIZE];
+	char	dir[BSIZE];	//Aquí vamos a guardar el directorio
 
 	getcwd(dir, BSIZE); //Nombramos el directorio
-	printf ("\033[1;32m");
+	printf ("\033[1;32m");	//Con estos prints cambiamos el color de la letra
 	printf ("%s ", dir);
 	printf ("\033[1;33m");
 	printf ("msh> ");
@@ -176,7 +180,7 @@ void leerUno(tline *linea, t_list *lista_jobs, char *buf) {
 		exit(1);
 	}
 	else{
-		if(linea->background ==1){  
+		if(linea->background ==1){	//Esperamos a los hijos en background y creamos un job de ese mandato para guardarlo en la lista  
             waitpid(pid,&status,WNOHANG);
             printf("[%d] %d\n", sizeList(lista_jobs)+1, pid);
             addJob(lista_jobs, CrearJob(pid, buf));
@@ -196,6 +200,7 @@ void	variosComandos(tline *linea, t_list *lista_jobs, char *buf){
 	int		i, j, k; //j es un limite para crear los pipes, i y k son contadores
 
 	j = linea -> ncommands - 2;
+
 	// Asignamos memoria para el array de pipes
 	p_hijos = (int **)malloc(sizeof(int *) * j);
 	for (i = 0; i <= j; i++)
@@ -216,7 +221,7 @@ void	variosComandos(tline *linea, t_list *lista_jobs, char *buf){
 		printf("ERROR: El mandato %s no existe\n" ,linea -> commands[0].argv[0]); //En caso de error
 		exit(1);
 	} else {
-		if (linea->ncommands > 2) {
+		if (linea->ncommands > 2) {	//Aquí con el uso de dos bucles vamos a crear las pipes necesarias y a crear todos los hijos
 			for (i = 1; i <= j; i++)
 				pipe(p_hijos[i]);
 			for (i = 1; i <= j; i++){
@@ -265,13 +270,14 @@ void	variosComandos(tline *linea, t_list *lista_jobs, char *buf){
 		close (p_hijos[k][0]);
 		close (p_hijos[k][1]);
 	}
-	if(linea->background ==1){  
+	if(linea->background ==1){  //Esperamos y creamos job en caso de bg
         waitpid(pid,&status,WNOHANG);
         printf("[%d]\n",pid);
         addJob(lista_jobs, CrearJob(pid, buf));
 	}else
-		for (k = 0; k < linea -> ncommands; k++)// Esperamos a que acaben todos los hijos
+		for (k = 0; k < linea -> ncommands; k++)	// Esperamos a que acaben todos los hijos
 			wait(&status);
+
 	// Liberamos toda la memoria que hemos reservado con malloc
 	for (i = 1; i <= j; i++)
 		free(p_hijos[i]);
@@ -289,20 +295,18 @@ int	entrada(tline *linea){
 
 t_list	*foreground(tline *linea, t_list	*lista_jobs){
 	int num = atoi(linea->commands[0].argv[1]);
-	if (sizeList(lista_jobs) < num)
+	int status;
+	pid_t pid, fg_wait;
+
+	if (sizeList(lista_jobs) < num)	//Comprobamos que exista ese numero en la lista
 	{
 		fprintf(stderr, "%s: %s\n", linea->commands[0].argv[0], strerror(errno));
 		return lista_jobs;
 	}
-	pid_t pid= lista_jobs[num - 1].job->pid;
-	int status;
-	pid_t fg_wait = waitpid(pid, &status, 0);
-	int fg_return = kill(fg_wait, SIGCONT);
-	return (DeleteJob(pid, lista_jobs));
-	/*if(fg_return < 0 || fg_wait < 0)
-		printf("Snap error, cannot bring process to foreground\n");
-	else
-		DeleteJob(pid, lista_jobs);*/
+	pid = lista_jobs[num - 1].job->pid;
+	fg_wait = waitpid(pid, &status, 0);
+	kill(fg_wait, SIGCONT);
+	return (DeleteJob(pid, lista_jobs));	//Devolvemos la lista con ese job borrado
 }
 
 int powAux(int numero, int potencia)
@@ -327,13 +331,13 @@ unsigned int octalADecimal(int octal) {
 	return (decimal);
 }
 
-tJob *CrearJob(int pid, char *buf){ //La funcion podria ser void si queremos modificar un job que se pasa, sino deberíamos hacer un malloc y no pasar ningun job. La memoria reservada se liberaria en una funcion de quitar jobs
+tJob *CrearJob(int pid, char *buf){ 
     tJob	*job;
 	char	*aux;
 	int		i = 0;
 
 	aux = buf;
-	while (aux[i] != '&')
+	while (aux[i] != '&')	//Quitamos el símbolo "&" para que salga igual que en una shell
 		i++;
 	aux[strlen(buf) - (strlen(buf) - i)] = '\0';
 	job = (tJob *)malloc(sizeof(tJob));
@@ -342,7 +346,7 @@ tJob *CrearJob(int pid, char *buf){ //La funcion podria ser void si queremos mod
     return job;
 }
 
-t_list	*CrearListaJobs()
+t_list	*CrearListaJobs()	//Creamos la lista vacía
 {
 	t_list	*list;
 
@@ -414,7 +418,7 @@ t_list	*DeleteJob(int pid, t_list *lista){
 			ant=actual;
 			actual=actual->next;
 		}
-		if(actual->job->pid==pid){//Lo ha encontrado. Puede haber 2 casos, que sea el ultimo, o uno que esté por el medio
+		if(actual->job->pid==pid){	//Lo ha encontrado. Puede haber 2 casos, que sea el ultimo, o uno que esté por el medio
 			if(actual->next==NULL){ //Es el ultimo
 				free(actual->job);
 				free(actual);
