@@ -60,3 +60,8 @@ Para compilar el programa, utiliza el siguiente comando:
 
 ```bash
 gcc -Wall -Wextra myshell.c libparser.a -o myshell
+```
+
+## Autores
+- https://github.com/ezy0
+- https://github.com/a-martinma
